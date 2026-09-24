@@ -131,6 +131,15 @@ async function verifyPassword(pw, user) {
   const expected = Buffer.from(user.hash, 'hex');
   return expected.length === h.length && crypto.timingSafeEqual(h, expected);
 }
+/** Accepts the password as typed, or without accidental spaces at either end (copy & paste on phones/Windows). */
+async function checkPassword(pw, user) {
+  const typed = String(pw == null ? '' : pw);
+  if (await verifyPassword(typed, user)) return true;
+  const trimmed = typed.trim();
+  return trimmed !== typed && trimmed.length > 0 && verifyPassword(trimmed, user);
+}
+/** New passwords are stored without surrounding spaces, so copy & paste can never lock anyone out. */
+const cleanPassword = (pw) => String(pw == null ? '' : pw).trim();
 function generatePassword() {
   const abc = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   return Array.from(crypto.randomBytes(10), (b) => abc[b % abc.length]).join('');
@@ -140,8 +149,8 @@ const activeAdmins = () => auth.users.filter((u) => u.role === 'admin' && u.acti
 
 async function ensureAdmin() {
   if (auth.users.length) return;
-  const fromEnv = !!process.env.ADMIN_PASSWORD;
-  const pw = process.env.ADMIN_PASSWORD || generatePassword();
+  const fromEnv = !!cleanPassword(process.env.ADMIN_PASSWORD);
+  const pw = cleanPassword(process.env.ADMIN_PASSWORD) || generatePassword();
   auth.users.push(Object.assign({ id: rid(8), username: 'admin', name: 'Admin', role: 'admin', active: true, createdAt: Date.now() }, await hashPassword(pw)));
   dirtyAuth = true;
   flush();
@@ -163,25 +172,44 @@ function createSession(user) {
   markAuth();
   return token;
 }
-function getSession(req) {
+/**
+ * The session token may arrive three ways, because some reverse proxies (hosting previews, CDNs,
+ * corporate gateways) strip or replace the Authorization header:
+ *   1. X-TBD-Token header   2. Authorization: Bearer <token>   3. ?_t=<token> (last resort)
+ */
+function tokenCandidates(req, url) {
+  const out = [];
+  const x = req.headers['x-tbd-token'];
+  if (x) out.push(['header', String(x).trim()]);
   const m = /^Bearer\s+(.+)$/i.exec(req.headers.authorization || '');
-  if (!m) return null;
-  const key = sha256(m[1].trim());
-  const s = auth.sessions[key];
-  if (!s) return null;
-  if (Date.now() - s.lastSeen > SESSION_DAYS * 864e5) {
-    delete auth.sessions[key];
-    markAuth();
-    return null;
+  if (m) out.push(['bearer', m[1].trim()]);
+  const q = url && url.searchParams.get('_t');
+  if (q) out.push(['query', q.trim()]);
+  return out;
+}
+function getSession(req, url) {
+  const candidates = tokenCandidates(req, url);
+  req.authVia = candidates.length ? 'invalid' : 'none';
+  for (const [via, token] of candidates) {
+    const key = sha256(token);
+    const s = auth.sessions[key];
+    if (!s) continue;
+    if (Date.now() - s.lastSeen > SESSION_DAYS * 864e5) {
+      delete auth.sessions[key];
+      markAuth();
+      continue;
+    }
+    const user = auth.users.find((u) => u.id === s.userId && u.active !== false);
+    if (!user) continue;
+    if (Date.now() - s.lastSeen > 60000) {
+      s.lastSeen = Date.now();
+      user.lastSeen = s.lastSeen;
+      markAuth();
+    }
+    req.authVia = via;
+    return { key, user };
   }
-  const user = auth.users.find((u) => u.id === s.userId && u.active !== false);
-  if (!user) return null;
-  if (Date.now() - s.lastSeen > 60000) {
-    s.lastSeen = Date.now();
-    user.lastSeen = s.lastSeen;
-    markAuth();
-  }
-  return { key, user };
+  return null;
 }
 function dropSessions(userId, exceptKey) {
   for (const [k, s] of Object.entries(auth.sessions)) if (s.userId === userId && k !== exceptKey) delete auth.sessions[k];
@@ -293,6 +321,39 @@ function deriveCounters(data) {
   return counters;
 }
 
+// ------------------------------------------------------------------ logging
+const LOG_REQUESTS = /^(1|true|yes|on)$/i.test(process.env.LOG_REQUESTS || '');
+const clock = () => new Date().toLocaleTimeString('en-GB', { hour12: false });
+function logLine(msg) {
+  console.log(`${clock()}  ${msg}`);
+}
+/** "192.168.1.23, iPhone" — who is connecting (never logs passwords or tokens). */
+function clientInfo(req) {
+  const fwd = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  const ip = (fwd || req.socket.remoteAddress || '?').replace(/^::ffff:/, '');
+  const ua = String(req.headers['user-agent'] || '');
+  const device = /iPad/.test(ua) || (/Macintosh/.test(ua) && /Mobile\//.test(ua)) ? 'iPad'
+    : /iPhone/.test(ua) ? 'iPhone'
+      : /Android/.test(ua) ? (/Mobile/.test(ua) ? 'Android phone' : 'Android tablet')
+        : /Macintosh/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows PC' : /CrOS/.test(ua) ? 'Chromebook' : /Linux/.test(ua) ? 'Linux' : 'unknown device';
+  return `${ip}, ${device}`;
+}
+function logRequest(req, res, url) {
+  const t0 = Date.now();
+  let done = false;
+  const q = new URLSearchParams(url.searchParams);
+  if (q.has('_t')) q.set('_t', '***');
+  const qs = q.toString();
+  const line = (status) => {
+    if (done) return;
+    done = true;
+    const sent = `${req.headers.authorization ? 'A' : '-'}${req.headers['x-tbd-token'] ? 'X' : '-'}${url.searchParams.has('_t') ? 'Q' : '-'}`;
+    logLine(`${req.method} ${url.pathname}${qs ? '?' + qs : ''} -> ${status} ${Date.now() - t0}ms  token-sent:${sent} auth:${req.authVia || '-'}  (${clientInfo(req)})`);
+  };
+  res.on('finish', () => line(res.statusCode));
+  res.on('close', () => line('closed by client'));
+}
+
 // ------------------------------------------------------------------ http helpers
 const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
@@ -350,19 +411,24 @@ async function handleApi(req, res, url) {
     const ip = req.socket.remoteAddress || '';
     const key = `${ip}|${username}`;
     const wait = tooMany(key);
-    if (wait) return error(res, 429, `Too many attempts. Try again in ${wait} minute${wait > 1 ? 's' : ''}.`);
+    if (wait) {
+      logLine(`Sign-in blocked for "${username}": too many wrong attempts (${clientInfo(req)})`);
+      return error(res, 429, `Too many wrong attempts. Try again in ${wait} minute${wait > 1 ? 's' : ''}.`);
+    }
     const user = auth.users.find((u) => u.username === username && u.active !== false);
-    if (!user || !(await verifyPassword(body.password || '', user))) {
+    if (!user || !(await checkPassword(body.password, user))) {
       fail(key);
+      logLine(`Sign-in failed for "${username}": ${user ? 'wrong password' : 'no such user'} (${clientInfo(req)})`);
       return error(res, 401, 'Wrong username or password');
     }
     failures.delete(key);
     user.lastSeen = Date.now();
+    logLine(`Signed in: ${user.username} (${clientInfo(req)})`);
     return sendJson(res, 200, { token: createSession(user), user: publicUser(user) });
   }
 
-  const sess = getSession(req);
-  if (!sess) return error(res, 401, 'Please sign in');
+  const sess = getSession(req, url);
+  if (!sess) return sendJson(res, 401, { error: 'Please sign in', code: req.authVia === 'none' ? 'no-token' : 'bad-token' });
   const user = sess.user;
   const admin = user.role === 'admin';
 
@@ -421,9 +487,10 @@ async function handleApi(req, res, url) {
 
   if (route === 'password' && method === 'POST') {
     const body = await readBody(req, 16 * 1024);
-    if (!(await verifyPassword(body.current || '', user))) return error(res, 400, 'Current password is wrong');
-    if (String(body.next || '').length < 6) return error(res, 400, 'New password must be at least 6 characters');
-    Object.assign(user, await hashPassword(body.next));
+    if (!(await checkPassword(body.current, user))) return error(res, 400, 'Current password is wrong');
+    const next = cleanPassword(body.next);
+    if (next.length < 6) return error(res, 400, 'New password must be at least 6 characters');
+    Object.assign(user, await hashPassword(next));
     dropSessions(user.id, sess.key);
     try { fs.unlinkSync(path.join(DATA_DIR, 'initial-admin-password.txt')); } catch (e) { /* ignore */ }
     return sendJson(res, 200, { ok: true });
@@ -447,15 +514,15 @@ async function handleApi(req, res, url) {
     if (b.id && !u) return error(res, 404, 'User not found');
     const active = b.active !== false;
     if (u && u.role === 'admin' && u.active !== false && (role !== 'admin' || !active) && activeAdmins().length <= 1) return error(res, 400, 'Keep at least one active admin');
+    const newPassword = cleanPassword(b.password);
+    if ((!u || newPassword) && newPassword.length < 6) return error(res, 400, 'Password must be at least 6 characters');
     if (!u) {
-      if (String(b.password || '').length < 6) return error(res, 400, 'Password must be at least 6 characters');
       u = { id: rid(8), createdAt: Date.now() };
       auth.users.push(u);
     }
     Object.assign(u, { username, name, role, active });
-    if (b.password) {
-      if (String(b.password).length < 6) return error(res, 400, 'Password must be at least 6 characters');
-      Object.assign(u, await hashPassword(b.password));
+    if (newPassword) {
+      Object.assign(u, await hashPassword(newPassword));
       dropSessions(u.id, u.id === user.id ? sess.key : null);
     }
     if (!active) dropSessions(u.id);
@@ -566,6 +633,7 @@ function notFound(res) {
 // ------------------------------------------------------------------ server
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
+  if (LOG_REQUESTS && url.pathname.startsWith('/api/')) logRequest(req, res, url);
   try {
     if (url.pathname.startsWith('/api/')) return await handleApi(req, res, url);
     if (req.method !== 'GET' && req.method !== 'HEAD') return error(res, 405, 'Method not allowed');
@@ -590,12 +658,12 @@ function lanAddresses() {
 async function main() {
   const args = process.argv.slice(2);
   if (args.includes('--help') || args.includes('-h')) {
-    console.log('Usage: node server/server.js [--reset-password <username> <new-password>]\nEnv: PORT (8080), HOST (0.0.0.0), DATA_DIR (./data), ADMIN_PASSWORD (first start only)');
+    console.log('Usage: node server/server.js [--reset-password <username> <new-password>]\nEnv: PORT (8080), HOST (0.0.0.0), DATA_DIR (./data), ADMIN_PASSWORD (first start only), LOG_REQUESTS=1 (log every API request)');
     return;
   }
   const ri = args.indexOf('--reset-password');
   if (ri >= 0) {
-    const [username, pw] = [String(args[ri + 1] || '').toLowerCase(), args[ri + 2]];
+    const [username, pw] = [String(args[ri + 1] || '').trim().toLowerCase(), cleanPassword(args[ri + 2])];
     const u = auth.users.find((x) => x.username === username);
     if (!u || !pw || pw.length < 6) {
       console.error('Usage: node server/server.js --reset-password <username> <new-password (6+ chars)>');

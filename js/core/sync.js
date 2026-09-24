@@ -36,24 +36,57 @@
     listeners.forEach((fn) => fn(st));
   }
 
+  // Some proxies (hosting previews, CDNs, company gateways) strip or block the Authorization header.
+  // The token is therefore also sent as X-TBD-Token, and if it still doesn't get through, the request
+  // is retried once with the token in the URL instead (remembered on this device).
+  let tokenInUrl = !!Meta.get('tokenInUrl', false);
+  let signedInAt = 0;
+
   async function api(path, opts = {}) {
     const { method = 'GET', body, signal, timeout = 15000 } = opts;
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), timeout);
     const onAbort = () => ctl.abort();
     if (signal) signal.addEventListener('abort', onAbort);
-    try {
+    const send = async (withUrlToken) => {
       const headers = { Accept: 'application/json' };
       if (body !== undefined) headers['Content-Type'] = 'application/json';
-      if (token) headers.Authorization = 'Bearer ' + token;
-      const res = await fetch(API + path, {
+      let url = API + path;
+      if (token && path !== 'login' && path !== 'health') {
+        if (withUrlToken) {
+          url += (url.includes('?') ? '&' : '?') + '_t=' + encodeURIComponent(token);
+        } else {
+          headers.Authorization = 'Bearer ' + token;
+          headers['X-TBD-Token'] = token;
+        }
+      }
+      const res = await fetch(url, {
         method, headers, body: body !== undefined ? JSON.stringify(body) : undefined, signal: ctl.signal, cache: 'no-store',
       });
       const isJson = (res.headers.get('content-type') || '').includes('json');
-      const data = isJson ? await res.json() : null;
+      const data = isJson ? await res.json().catch(() => null) : null;
+      return { res, data };
+    };
+    // Our server always answers /api/ with JSON; an error page without it came from something in between.
+    const fromServer = (data) => !!data && typeof data === 'object' && ('error' in data || 'code' in data);
+    const headerTrouble = (res, data) =>
+      (res.status === 401 && (!data || data.code !== 'bad-token' || Date.now() - signedInAt < 60000)) ||
+      ((res.status === 403 || res.status === 407) && !fromServer(data));
+    try {
+      let { res, data } = await send(tokenInUrl);
+      if (token && !tokenInUrl && path !== 'login' && path !== 'health' && headerTrouble(res, data)) {
+        const retry = await send(true);
+        if (retry.res.ok || (retry.res.status !== 401 && fromServer(retry.data))) {
+          tokenInUrl = true;
+          Meta.set('tokenInUrl', true);
+          console.info('[sync] The sign-in headers do not reach the server on this network; sending the token in the URL instead.');
+        }
+        ({ res, data } = retry);
+      }
       if (!res.ok) {
         const e = new Error((data && data.error) || res.statusText || 'Request failed');
         e.status = res.status;
+        e.code = data && data.code;
         throw e;
       }
       return data;
@@ -74,7 +107,9 @@
   // ---------------------------------------------------------------- auth
   async function login(username, password) {
     const r = await api('login', { method: 'POST', body: { username, password } });
+    if (!r || !r.token) throw new Error('The server did not return a sign-in. Please try again.');
     token = r.token;
+    signedInAt = Date.now();
     Meta.set('token', token);
     return r.user;
   }
@@ -273,5 +308,7 @@
     get lastSync() { return lastSync; },
     get pendingCount() { return pendingMap.size; },
     get hasToken() { return !!token; },
+    get signedInAt() { return signedInAt; },
+    get tokenInUrl() { return tokenInUrl; },
   };
 })(window.App = window.App || {});

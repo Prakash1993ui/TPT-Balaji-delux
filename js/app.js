@@ -6,7 +6,7 @@
   'use strict';
   const { html, h, render, useState, useEffect, useRef, U, L, Icon, Button, Badge, Avatar, Modal, toast } = App;
   const S = App.Store;
-  App.VERSION = '1.0.0';
+  App.VERSION = '1.0.1';
 
   const NAV = [
     { id: 'dashboard', label: 'Dashboard', short: 'Home', icon: 'dashboard' },
@@ -125,7 +125,12 @@
   // ------------------------------------------------------------------ sync pill
   function useSyncStatus() {
     const [st, setSt] = useState(S.mode === 'server' ? App.Sync.status : 'local');
-    useEffect(() => (S.mode === 'server' ? App.Sync.onStatus(setSt) : undefined), []);
+    useEffect(() => {
+      if (S.mode !== 'server') return undefined;
+      const off = App.Sync.onStatus(setSt);
+      setSt(App.Sync.status); // the first sync may have finished between render and subscribing
+      return off;
+    }, []);
     return st;
   }
   function SyncPill({ compact }) {
@@ -388,7 +393,9 @@
 
   App.onAuthLost = () => {
     authed = false;
-    authMessage = 'Your session has ended. Please sign in again.';
+    authMessage = Date.now() - (App.Sync.signedInAt || 0) < 60000
+      ? 'The password was accepted, but the connection lost the sign-in straight away. Please try again — if it keeps happening, open the app in its own browser tab.'
+      : 'Your session has ended. Please sign in again.';
     App.closeAllModals();
     if (App.refresh) App.refresh();
   };
@@ -412,26 +419,37 @@
     if (location.protocol !== 'https:' && !/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) return;
     if (/[?&]nosw\b/.test(location.search)) return;
     navigator.serviceWorker.register('sw.js').then((reg) => {
-      const offer = (worker) => toast('A new version is ready', 'info', {
-        duration: 60000,
-        action: { label: 'Update', onClick: () => worker.postMessage('skipWaiting') },
-      });
-      if (reg.waiting && navigator.serviceWorker.controller) offer(reg.waiting);
+      // Workers from older versions wait for this message; new ones activate by themselves.
+      if (reg.waiting && navigator.serviceWorker.controller) reg.waiting.postMessage('skipWaiting');
       reg.addEventListener('updatefound', () => {
         const w = reg.installing;
         if (!w) return;
         w.addEventListener('statechange', () => {
-          if (w.state === 'installed' && navigator.serviceWorker.controller) offer(w);
+          if (w.state === 'installed' && navigator.serviceWorker.controller) w.postMessage('skipWaiting');
         });
       });
       setInterval(() => reg.update().catch(() => {}), 60 * 60 * 1000);
     }).catch((e) => console.warn('SW registration failed', e));
+    // A new version took over: reload now if nothing is being edited, otherwise as soon as it is safe.
     let reloading = false;
     const hadController = !!navigator.serviceWorker.controller;
+    const busy = () => {
+      if (document.querySelector('.modal, [role=dialog]')) return true;
+      const el = document.activeElement;
+      return !!(el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) && el.value && !el.closest('.login-form'));
+    };
+    const reloadWhenSafe = () => {
+      if (reloading) return;
+      if (!busy()) {
+        reloading = true;
+        location.reload();
+        return;
+      }
+      setTimeout(reloadWhenSafe, 2000);
+    };
     navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (reloading || !hadController) return; // first install: nothing to refresh
-      reloading = true;
-      location.reload();
+      if (!hadController) return; // first install: nothing to refresh
+      reloadWhenSafe();
     });
   }
 

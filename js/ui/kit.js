@@ -94,8 +94,20 @@
     <//>`;
   }
 
-  function Input({ value, onChange, type = 'text', class: c, ...rest }) {
-    return html`<input class=${U.cls('input', c)} type=${type} value=${value == null ? '' : value}
+  /**
+   * Ref for fields that must be typed exactly (usernames, passwords): no auto-capitalise, auto-correct
+   * or spell-check on phone keyboards. Set as real attributes — as Preact props, "off"/"false" strings
+   * would be turned into `true` by the boolean DOM properties.
+   */
+  function exactInput(el) {
+    if (!el) return;
+    el.setAttribute('autocapitalize', 'none');
+    el.setAttribute('autocorrect', 'off');
+    el.setAttribute('spellcheck', 'false');
+  }
+
+  function Input({ value, onChange, type = 'text', class: c, exact, ...rest }) {
+    return html`<input class=${U.cls('input', c)} type=${type} value=${value == null ? '' : value} ref=${exact ? exactInput : undefined}
       onInput=${(e) => onChange && onChange(e.currentTarget.value)} ...${rest} />`;
   }
   function MoneyInput({ value, onChange, class: c, ...rest }) {
@@ -415,7 +427,7 @@
     useStore, useMedia, useTick, usePref, BP,
     Icon, Button, Badge, Avatar, Field, Input, MoneyInput, Select, Textarea, Toggle, Segmented, Stepper, SearchInput, Chips,
     Card, Stat, EmptyState, Page, KV, BarChart,
-    Modal, ModalHost, openModal, closeAllModals, navigate, confirm, chooseAction,
+    Modal, ModalHost, openModal, closeAllModals, navigate, confirm, chooseAction, exactInput,
     ToastHost, toast, attempt,
   });
 })(window.App = window.App || {});

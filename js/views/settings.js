@@ -443,8 +443,8 @@
     const [busy, setBusy] = useState(false);
     async function save() {
       if (!u.name.trim() || !u.username.trim()) return toast('Name and username are required', 'error');
-      if (!user && u.password.length < 6) return toast('Password must be at least 6 characters', 'error');
-      if (u.password && u.password.length < 6) return toast('Password must be at least 6 characters', 'error');
+      if (!user && u.password.trim().length < 6) return toast('Password must be at least 6 characters', 'error');
+      if (u.password && u.password.trim().length < 6) return toast('Password must be at least 6 characters', 'error');
       setBusy(true);
       const ok = await attempt(() => App.Sync.saveUser(u), 'User saved');
       setBusy(false);
@@ -458,9 +458,9 @@
         footer=${html`${user && user.id !== S.user.id && html`<${Button} variant="ghost" icon="trash" onClick=${remove} aria-label="Delete user" />`}
           <${Button} onClick=${() => close()}>Cancel<//><${Button} variant="primary" icon="check" loading=${busy} onClick=${save}>Save<//>`}>
       <${Field} label="Full name" required><${Input} value=${u.name} onChange=${set('name')} data-autofocus /><//>
-      <${Field} label="Username" required hint="Used to sign in"><${Input} value=${u.username} autocapitalize="none" autocomplete="off" onChange=${(v) => set('username')(v.toLowerCase().replace(/\s+/g, ''))} /><//>
+      <${Field} label="Username" required hint="Used to sign in"><${Input} value=${u.username} exact autocomplete="off" onChange=${(v) => set('username')(v.toLowerCase().replace(/\s+/g, ''))} /><//>
       <${Field} as="div" label="Role"><${Segmented} full value=${u.role} onChange=${set('role')} options=${[{ value: 'staff', label: 'Staff' }, { value: 'manager', label: 'Manager' }, { value: 'admin', label: 'Admin' }]} /><//>
-      <${Field} label=${user ? 'New password (leave empty to keep)' : 'Password'} required=${!user}><${Input} type="password" autocomplete="new-password" value=${u.password} onChange=${set('password')} /><//>
+      <${Field} label=${user ? 'New password (leave empty to keep)' : 'Password'} required=${!user}><${Input} type="password" exact autocomplete="new-password" value=${u.password} onChange=${set('password')} /><//>
       ${user && user.id !== S.user.id && html`<${Toggle} label="Account active" checked=${u.active !== false} onChange=${set('active')} />`}
     <//>`;
   }
@@ -469,15 +469,15 @@
     const [next, setNext] = useState('');
     const [again, setAgain] = useState('');
     async function save() {
-      if (next.length < 6) return toast('New password must be at least 6 characters', 'error');
+      if (next.trim().length < 6) return toast('New password must be at least 6 characters', 'error');
       if (next !== again) return toast('Passwords do not match', 'error');
       if (await attempt(() => App.Sync.changePassword(cur, next), 'Password changed')) close(true);
     }
     return html`<${Modal} title="Change password" icon="key" size="sm" onClose=${() => close()}
         footer=${html`<${Button} onClick=${() => close()}>Cancel<//><${Button} variant="primary" onClick=${save}>Change password<//>`}>
-      <${Field} label="Current password"><${Input} type="password" autocomplete="current-password" value=${cur} onChange=${setCur} data-autofocus /><//>
-      <${Field} label="New password"><${Input} type="password" autocomplete="new-password" value=${next} onChange=${setNext} /><//>
-      <${Field} label="Repeat new password"><${Input} type="password" autocomplete="new-password" value=${again} onChange=${setAgain} /><//>
+      <${Field} label="Current password"><${Input} type="password" exact autocomplete="current-password" value=${cur} onChange=${setCur} data-autofocus /><//>
+      <${Field} label="New password"><${Input} type="password" exact autocomplete="new-password" value=${next} onChange=${setNext} /><//>
+      <${Field} label="Repeat new password"><${Input} type="password" exact autocomplete="new-password" value=${again} onChange=${setAgain} /><//>
     <//>`;
   }
 

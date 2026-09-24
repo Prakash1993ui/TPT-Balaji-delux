@@ -67,6 +67,38 @@ test('login: wrong password is rejected, token works, me returns the user', asyn
   assert.equal((await api('sync?since=0')).status, 401, 'data requires sign-in');
 });
 
+test('sign-in survives proxies that strip or replace the Authorization header', async () => {
+  const none = await fetch(base + '/api/me');
+  assert.equal(none.status, 401);
+  assert.equal((await none.json()).code, 'no-token', 'tells the app that no token arrived');
+  const bad = await fetch(base + '/api/me', { headers: { Authorization: 'Bearer nope' } });
+  assert.equal((await bad.json()).code, 'bad-token');
+  assert.equal((await fetch(base + '/api/me', { headers: { 'X-TBD-Token': adminToken } })).status, 200, 'custom header');
+  const replaced = await fetch(base + '/api/me', { headers: { 'X-TBD-Token': adminToken, Authorization: 'Basic cHJveHk6cHJveHk=' } });
+  assert.equal(replaced.status, 200, 'works when a proxy puts its own Authorization header in');
+  const viaUrl = await fetch(base + '/api/me?_t=' + encodeURIComponent(adminToken));
+  assert.equal(viaUrl.status, 200, 'last resort: token in the URL');
+  assert.equal((await viaUrl.json()).user.username, 'admin');
+  const poll = await fetch(`${base}/api/sync?since=0&db=&_t=${encodeURIComponent(adminToken)}`);
+  assert.equal((await poll.json()).full, true);
+});
+
+test('passwords: spaces pasted around them are forgiven, letter case is not', async () => {
+  assert.equal((await api('login', { method: 'POST', body: { username: ' Admin ', password: 'secret123 ' } })).status, 200);
+  assert.equal((await api('login', { method: 'POST', body: { username: 'admin', password: '\tsecret123\n' } })).status, 200);
+  assert.equal((await api('login', { method: 'POST', body: { username: 'admin', password: 'Secret123' } })).status, 401);
+  assert.equal((await api('login', { method: 'POST', body: { username: 'admin', password: '   ' } })).status, 401);
+  const created = await api('users', { method: 'POST', token: adminToken, body: { username: 'desk2', name: 'Desk Two', role: 'staff', password: '  pass word1 ' } });
+  assert.equal(created.status, 200);
+  assert.equal((await api('login', { method: 'POST', body: { username: 'desk2', password: 'pass word1' } })).status, 200, 'stored without the outer spaces');
+  const tooShort = await api('users', { method: 'POST', token: adminToken, body: { id: created.json.user.id, username: 'desk2', name: 'Renamed', role: 'manager', password: '12' } });
+  assert.equal(tooShort.status, 400);
+  const u = (await api('users', { token: adminToken })).json.users.find((x) => x.id === created.json.user.id);
+  assert.equal(u.name, 'Desk Two', 'a rejected save changes nothing');
+  assert.equal(u.role, 'staff');
+  assert.equal((await api('users/' + u.id, { method: 'DELETE', token: adminToken })).status, 200);
+});
+
 test('login is rate limited after repeated failures', async () => {
   for (let i = 0; i < 10; i++) await api('login', { method: 'POST', body: { username: 'ghost', password: 'x' } });
   const r = await api('login', { method: 'POST', body: { username: 'ghost', password: 'x' } });

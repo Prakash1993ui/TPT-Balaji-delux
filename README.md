@@ -112,6 +112,16 @@ backups in `data/backups/` (last 60 days, plus one before every restore).
 
 Forgot the admin password? `node server/server.js --reset-password admin NewPassword123`
 
+**Can't sign in?**
+
+- Usernames are not case-sensitive; passwords are. Spaces pasted before/after a password are ignored.
+- After 10 wrong attempts from the same device the username is blocked for 15 minutes (restarting the server clears it).
+- The server prints every sign-in (and failed attempt) with the device type. Start it with `LOG_REQUESTS=1` to also
+  log every request — useful if a proxy is in the way.
+- Behind proxies that strip or block the `Authorization` header (some hosting previews, CDNs and company
+  gateways), the app automatically sends its sign-in token another way (an `X-TBD-Token` header, or as a last resort
+  in the request URL) — no configuration needed.
+
 > **HTTPS for phones:** installing the app and offline caching need HTTPS (or `localhost`).
 > On a hotel LAN over plain `http://`, everything works but the app isn't installable. For HTTPS put the server
 > behind a reverse proxy such as [Caddy](https://caddyserver.com) (automatic certificates), a Cloudflare Tunnel or Tailscale.
@@ -162,7 +172,7 @@ slabs in Settings if the law changes.
 ```
 index.html              App page (loads the scripts below, no build step)
 manifest.webmanifest    PWA manifest (install as app)
-sw.js                   Service worker (offline, update prompt) — bump VERSION when files change
+sw.js                   Service worker (offline, auto-update) — bump VERSION when files change
 css/app.css             All styles (mobile-first, dark mode, print)
 js/core/                Data & logic (no UI)
   utils.js              Dates, ₹ formatting, amount in words, CSV, search
@@ -195,7 +205,8 @@ npm run build:single     # standalone/tpt-balaji-delux.html
 
 Any static file server also works for local mode, e.g. `python3 -m http.server 8000`.
 After changing app files, bump `VERSION` in `sw.js` so installed devices receive the update
-(they show an **Update** button).
+(they switch to the new version by themselves at a safe moment — never while a form is open). The hotel server
+does this automatically by fingerprinting `sw.js`.
 
 ## Third-party licenses
 

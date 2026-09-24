@@ -132,12 +132,18 @@
   }
 
   // ------------------------------------------------------------------ server sign-in
+  const inFrame = (() => {
+    try { return window.self !== window.top; } catch (e) { return true; }
+  })();
+
   function Login({ onDone, message }) {
     const [username, setUsername] = useState(App.Meta.get('lastUsername', ''));
     const [password, setPassword] = useState('');
     const [err, setErr] = useState(message || '');
     const [busy, setBusy] = useState(false);
     const [show, setShow] = useState(false);
+    const [caps, setCaps] = useState(false);
+    const checkCaps = (e) => setCaps(!!(e.getModifierState && e.getModifierState('CapsLock')));
     async function submit(e) {
       e.preventDefault();
       if (!username.trim() || !password) return setErr('Enter your username and password');
@@ -148,24 +154,34 @@
         App.Meta.set('lastUsername', username.trim().toLowerCase());
         onDone(user);
       } catch (ex) {
-        setErr(ex.status === 401 ? 'Wrong username or password' : ex.status === 429 ? ex.message : !ex.status ? 'Cannot reach the hotel server. Check the network and try again.' : ex.message);
+        setErr(ex.status === 401 ? 'Wrong username or password. Passwords are case-sensitive.'
+          : ex.status === 429 ? ex.message
+            : !ex.status && (ex.name === 'TypeError' || ex.name === 'AbortError') ? 'Cannot reach the hotel server. Check the network and try again.'
+              : ex.message || 'Sign-in failed. Please try again.');
       } finally {
         setBusy(false);
       }
     }
     return html`<${AuthShell}>
-      <form class="stack" onSubmit=${submit}>
+      <form class="stack login-form" onSubmit=${submit}>
         <h1 class="welcome-title">Sign in</h1>
-        ${err && html`<div class="alert alert-danger"><${Icon} name="alert" size=${18} /> ${err}</div>`}
-        <${Field} label="Username"><input class="input" autocomplete="username" autocapitalize="none" value=${username} onInput=${(e) => setUsername(e.currentTarget.value)} autofocus /><//>
-        <${Field} label="Password">
+        ${err && html`<div class="alert alert-danger" role="alert"><${Icon} name="alert" size=${18} /> <span>${err}</span></div>`}
+        <${Field} label="Username"><input class="input" name="username" autocomplete="username" ref=${App.exactInput} value=${username} onInput=${(e) => setUsername(e.currentTarget.value)} autofocus /><//>
+        <${Field} label="Password" hint=${caps ? 'Caps Lock is on' : ''}>
           <div class="input-affix right">
-            <input class="input" type=${show ? 'text' : 'password'} autocomplete="current-password" value=${password} onInput=${(e) => setPassword(e.currentTarget.value)} />
+            <input class="input" name="password" type=${show ? 'text' : 'password'} autocomplete="current-password" ref=${App.exactInput} value=${password}
+              onInput=${(e) => setPassword(e.currentTarget.value)} onKeyUp=${checkCaps} onKeyDown=${checkCaps} />
             <button type="button" class="affix-btn" aria-label=${show ? 'Hide password' : 'Show password'} onClick=${() => setShow(!show)}><${Icon} name=${show ? 'eyeOff' : 'eye'} size=${18} /></button>
           </div>
         <//>
         <${Button} type="submit" variant="primary" block loading=${busy} icon="login">Sign in<//>
-        <p class="muted small center"><${Icon} name="cloud" size=${14} /> Connected to the hotel server at ${location.host}</p>
+        <p class="muted small login-server"><${Icon} name="cloud" size=${14} /><span>Connected to the hotel server at <b>${location.host}</b></span></p>
+        ${inFrame && html`<p class="small center"><a href=${location.href.split('#')[0]} target="_blank" rel="noopener">Open in its own browser tab ↗</a></p>`}
+        <details class="login-help small muted">
+          <summary>Forgot your password?</summary>
+          <p>Ask an admin to set a new one in <b>Settings → Users & login</b>. If the admin password is lost, run this on the server computer:</p>
+          <code>node server/server.js --reset-password admin NewPassword123</code>
+        </details>
       </form>
     <//>`;
   }

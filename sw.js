@@ -1,9 +1,10 @@
 /*
  * Service worker: makes the app load instantly and work offline.
- * Bump VERSION whenever app files change so devices pick up the update
- * (the app shows an "Update" button when a new version is ready).
+ * Bump VERSION whenever app files change so devices pick up the update.
+ * A new version activates as soon as it has downloaded; the app then reloads
+ * itself at a safe moment (never while a form is open).
  */
-const VERSION = 'tbd-v1.0.0';
+const VERSION = 'tbd-v1.0.1';
 const ASSETS = [
   './',
   'index.html',
@@ -40,7 +41,11 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(VERSION).then((cache) => cache.addAll(ASSETS.map((u) => new Request(u, { cache: 'reload' })))));
+  event.waitUntil(
+    caches.open(VERSION)
+      .then((cache) => cache.addAll(ASSETS.map((u) => new Request(u, { cache: 'reload' }))))
+      .then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener('activate', (event) => {
