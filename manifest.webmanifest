@@ -1,0 +1,25 @@
+{
+  "name": "TPT Balaji Delux Hotel Manager",
+  "short_name": "Balaji Delux",
+  "description": "Rooms, bookings, check-in/check-out, GST invoices, housekeeping and reports for TPT Balaji Delux, Tirupati.",
+  "id": "./",
+  "start_url": "./#/dashboard",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#F6F5F3",
+  "theme_color": "#8A1538",
+  "lang": "en-IN",
+  "dir": "ltr",
+  "categories": ["business", "productivity", "travel"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Walk-in check-in", "short_name": "Check-in", "url": "./#/dashboard?new=walkin", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "New reservation", "short_name": "Reserve", "url": "./#/calendar?new=reserve", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Room board", "short_name": "Rooms", "url": "./#/rooms", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}
