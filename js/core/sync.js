@@ -194,6 +194,16 @@
           break;
         }
         if (e.name === 'AbortError') continue; // interrupted to push a new change (or poll timeout)
+        if (!e.status) {
+          // Proxies sometimes cut long-running requests: if the server still answers, just reconnect.
+          let reachable = false;
+          try { await health(); reachable = true; } catch (x) { /* really offline */ }
+          if (reachable && running) {
+            failures = 0;
+            await sleep(300);
+            continue;
+          }
+        }
         failures++;
         if (failures >= 2 || pendingMap.size) setStatus('offline'); // ignore a single dropped connection
         await sleep(failures === 1 ? 500 : backoff);
