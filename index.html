@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en-IN">
+<head>
+  <meta charset="utf-8" />
+  <!--TBD_SERVER-->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>TPT Balaji Delux · Hotel Manager</title>
+  <meta name="description" content="Hotel management for TPT Balaji Delux, Tirupati: rooms, bookings, check-in/check-out, GST invoices, housekeeping, expenses and reports. Works on phones, iPads, laptops and desktops — even offline." />
+  <meta name="theme-color" content="#8A1538" />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Balaji Delux" />
+  <meta name="format-detection" content="telephone=no" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icons/favicon.svg" type="image/svg+xml" />
+  <link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+  <link rel="stylesheet" href="css/app.css" />
+  <script>
+    // Apply the saved theme before first paint (avoids a white flash in dark mode)
+    (function () {
+      try {
+        var p = JSON.parse(localStorage.getItem('tbd:meta:pref:theme')) || 'system';
+        var dark = p === 'dark' || (p !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+      } catch (e) {}
+    })();
+  </script>
+  <!-- Libraries (vendored, see vendor/LICENSES.md) -->
+  <script defer src="vendor/preact.min.js"></script>
+  <script defer src="vendor/preact-hooks.min.js"></script>
+  <script defer src="vendor/htm.min.js"></script>
+  <!-- App -->
+  <script defer src="js/ui/icons.js"></script>
+  <script defer src="js/core/utils.js"></script>
+  <script defer src="js/core/persist.js"></script>
+  <script defer src="js/core/store.js"></script>
+  <script defer src="js/core/logic.js"></script>
+  <script defer src="js/core/sync.js"></script>
+  <script defer src="js/core/demo.js"></script>
+  <script defer src="js/ui/kit.js"></script>
+  <script defer src="js/views/booking-form.js"></script>
+  <script defer src="js/views/bookings.js"></script>
+  <script defer src="js/views/invoice.js"></script>
+  <script defer src="js/views/dashboard.js"></script>
+  <script defer src="js/views/rooms.js"></script>
+  <script defer src="js/views/calendar.js"></script>
+  <script defer src="js/views/guests.js"></script>
+  <script defer src="js/views/expenses.js"></script>
+  <script defer src="js/views/reports.js"></script>
+  <script defer src="js/views/settings.js"></script>
+  <script defer src="js/views/welcome.js"></script>
+  <script defer src="js/app.js"></script>
+</head>
+<body>
+  <div id="app">
+    <div class="splash">
+      <svg width="64" height="64" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="15" fill="#8A1538"/><path d="M32 8l3.2 5.6h-6.4z" fill="#F2C14E"/><path d="M26.5 15.5h11l1.6 5.5H24.9z" fill="#F2C14E"/><path d="M23.5 23h17l1.8 6.2H21.7z" fill="#F2C14E"/><path d="M20.5 31.2h23l2 6.8h-27z" fill="#F2C14E"/><path d="M16.5 40h31v14h-31z" fill="#F2C14E"/><path d="M28 54v-6.5a4 4 0 0 1 8 0V54z" fill="#8A1538"/></svg>
+      <div class="splash-text">TPT Balaji Delux</div>
+      <div class="spinner lg"></div>
+    </div>
+  </div>
+  <div id="print-root" aria-hidden="true"></div>
+  <noscript><p style="padding:24px;font-family:sans-serif">Please enable JavaScript to use the TPT Balaji Delux Hotel Manager.</p></noscript>
+</body>
+</html>

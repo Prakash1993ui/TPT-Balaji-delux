@@ -1,0 +1,8 @@
+# Hotel server data (guest details, bookings, passwords) — never commit
+data/
+# Generated single-file build
+standalone/
+node_modules/
+*.tmp
+.DS_Store
+Thumbs.db

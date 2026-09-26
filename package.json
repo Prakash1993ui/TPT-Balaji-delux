@@ -1,0 +1,14 @@
+{
+  "name": "tpt-balaji-delux",
+  "version": "1.0.1",
+  "private": true,
+  "description": "Hotel administration manager for TPT Balaji Delux, Tirupati. Works on phones, iPads, laptops and desktops.",
+  "scripts": {
+    "start": "node server/server.js",
+    "test": "node --test",
+    "build:single": "node tools/build-single.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
