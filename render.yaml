@@ -1,0 +1,23 @@
+# One-click deploy to Render: https://render.com/deploy?repo=https://github.com/Prakash1993ui/TPT-Balaji-delux
+# Uses a paid "starter" instance with a 1 GB disk. (Free instances cannot have a disk,
+# so all hotel data would be lost on every restart.) Render asks for ADMIN_PASSWORD during setup.
+services:
+  - type: web
+    name: tpt-balaji-delux
+    runtime: node
+    plan: starter
+    region: singapore
+    buildCommand: node --version
+    startCommand: node server/server.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATA_DIR
+        value: /var/data
+      - key: ADMIN_PASSWORD
+        sync: false
+    disk:
+      name: hotel-data
+      mountPath: /var/data
+      sizeGB: 1

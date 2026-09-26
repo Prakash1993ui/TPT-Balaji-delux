@@ -8,6 +8,9 @@ Front desk, owner and housekeeping staff can all use it: walk-in check-in in und
 advance reservations, a live room board, a reservation calendar, GST invoices, payments,
 housekeeping, expenses and reports.
 
+**Open the app:** <https://prakash1993ui.github.io/TPT-Balaji-delux/> (free; each device keeps its own data) —
+or [run the hotel server](#2-hotel-server--all-devices-share-live-data) so every device shares the same bookings.
+
 | Phone | iPad (portrait) | Desktop |
 |---|---|---|
 | <img src="docs/screenshots/phone-dashboard.png" width="230" alt="Dashboard on a phone"> | <img src="docs/screenshots/ipad-portrait-rooms.png" width="300" alt="Room board on an iPad"> | <img src="docs/screenshots/desktop-dashboard.png" width="420" alt="Dashboard on a desktop"> |
@@ -81,6 +84,9 @@ In this mode data is saved **in that browser on that device** (IndexedDB). Each 
 separate data, so use this for a single front-desk computer or to try the app. Download a backup regularly
 (*Settings → Backup & data*); the app reminds you every 7 days.
 
+> **iPhone / iPad:** open the site in Safari → *Share* → **Add to Home Screen**, and always open the app from that
+> icon. Safari can delete a website's saved data after 7 days without a visit; apps added to the Home Screen are kept.
+
 ### 2. Hotel server — all devices share live data
 
 Run the included server on one computer at the hotel (or a small cloud server). Every phone, iPad
@@ -125,6 +131,33 @@ Forgot the admin password? `node server/server.js --reset-password admin NewPass
 > **HTTPS for phones:** installing the app and offline caching need HTTPS (or `localhost`).
 > On a hotel LAN over plain `http://`, everything works but the app isn't installable. For HTTPS put the server
 > behind a reverse proxy such as [Caddy](https://caddyserver.com) (automatic certificates), a Cloudflare Tunnel or Tailscale.
+
+#### Where to run the server
+
+**A computer at the hotel (free).** Install [Node.js](https://nodejs.org) (LTS), download this project
+(green *Code* button → *Download ZIP*), unzip it and double-click **`start-server.bat`** (Windows) — or run
+`node server/server.js` on Mac/Linux. Open the address it shows on phones and iPads connected to the hotel
+Wi-Fi. Keep that computer switched on.
+
+**In the cloud — works from anywhere, with HTTPS (installable on phones):**
+
+- **Railway** (Hobby plan, about US$5/month; free trial available)
+  1. Sign in at [railway.com](https://railway.com) with GitHub → *New Project* → *Deploy from GitHub repo* → `TPT-Balaji-delux`.
+  2. *Variables* → add `ADMIN_PASSWORD` = a strong password.
+  3. Right-click the service → **Attach volume** → mount path `/data`. The server uses it automatically;
+     without a volume all data is lost on every redeploy (the server log warns you).
+  4. *Settings → Networking* → **Generate domain**, then open that `https://….up.railway.app` address on every device
+     and sign in as `admin`.
+- **Render** (Starter instance + 1 GB disk, about US$7.25/month) — one click:
+  [Deploy to Render](https://render.com/deploy?repo=https://github.com/Prakash1993ui/TPT-Balaji-delux).
+  It asks for `ADMIN_PASSWORD`; the disk is set up by `render.yaml`. (Render's free plan has no disk, so it can't keep data.)
+
+Only run **one** copy of the server per hotel — it keeps all data in its data folder.
+
+#### Moving from the free website to the server
+
+On the device you have been using: *Settings → Backup & data → Download backup*. Then open the server's address,
+sign in as `admin` and choose *Settings → Backup & data → Restore from file*.
 
 ## Install as an app
 
@@ -173,6 +206,9 @@ slabs in Settings if the law changes.
 index.html              App page (loads the scripts below, no build step)
 manifest.webmanifest    PWA manifest (install as app)
 sw.js                   Service worker (offline, auto-update) — bump VERSION when files change
+start-server.bat        Double-click server start for a Windows PC at the hotel
+railway.json            Railway settings (start command, health check)
+render.yaml             Render one-click deploy (web service + persistent disk)
 css/app.css             All styles (mobile-first, dark mode, print)
 js/core/                Data & logic (no UI)
   utils.js              Dates, ₹ formatting, amount in words, CSV, search

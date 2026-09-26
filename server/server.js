@@ -24,7 +24,19 @@ const { promisify } = require('util');
 
 const scrypt = promisify(crypto.scrypt);
 const ROOT = path.resolve(__dirname, '..');
-const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(ROOT, 'data'));
+// Where the hotel data lives. On Railway an attached volume is used automatically.
+const DATA_DIR = path.resolve(process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH || path.join(ROOT, 'data'));
+/** Cloud hosts wipe the app folder on every deploy/restart unless the data is on a persistent disk. */
+const EPHEMERAL_WARNING = (() => {
+  if (process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH) return '';
+  if (process.env.RAILWAY_ENVIRONMENT_NAME || process.env.RAILWAY_PROJECT_ID) {
+    return 'No Railway volume is attached. Hotel data will be LOST on every redeploy!\n     Fix: right-click the service -> Attach volume -> mount path /data, then redeploy.';
+  }
+  if (process.env.RENDER) {
+    return 'No persistent disk configured. Hotel data will be LOST on every deploy/restart!\n     Fix: add a disk (mount path /var/data) and set DATA_DIR=/var/data.';
+  }
+  return '';
+})();
 const PORT = parseInt(process.env.PORT || '8080', 10);
 const HOST = process.env.HOST || '0.0.0.0';
 const APP_VERSION = (() => {
@@ -679,8 +691,14 @@ async function main() {
   server.listen(PORT, HOST, () => {
     console.log(`  TPT Balaji Delux hotel server v${APP_VERSION}`);
     console.log(`  Data folder: ${DATA_DIR}`);
-    console.log(`  Open on this computer:   http://localhost:${PORT}`);
-    for (const ip of lanAddresses()) console.log(`  Open on phones/tablets:  http://${ip}:${PORT}   (same Wi-Fi)`);
+    if (EPHEMERAL_WARNING) console.warn(`\n  !! WARNING: ${EPHEMERAL_WARNING}\n`);
+    const cloud = process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : process.env.RENDER_EXTERNAL_URL || '';
+    if (cloud) {
+      console.log(`  Open on any device:      ${cloud}`);
+    } else {
+      console.log(`  Open on this computer:   http://localhost:${PORT}`);
+      for (const ip of lanAddresses()) console.log(`  Open on phones/tablets:  http://${ip}:${PORT}   (same Wi-Fi)`);
+    }
     console.log('  Press Ctrl+C to stop.\n');
   });
 }
