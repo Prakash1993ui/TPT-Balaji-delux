@@ -121,7 +121,25 @@
     </article>`;
   }
 
+  async function shareInvoiceFile(b) {
+    const root = document.getElementById('print-root');
+    render(h(InvoiceDoc, { b }), root);
+    let css = '';
+    try { css = await (await fetch('css/app.css')).text(); } catch (e) {}
+    const body = root.innerHTML;
+    render(null, root);
+    const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Invoice ${b.invoiceNo || ''}</title><style>${css}\nbody{background:#fff;padding:12px}</style></head><body>${body}</body></html>`;
+    const f = new File([html], `Invoice-${b.invoiceNo || 'bill'}.html`, { type: 'text/html' });
+    try { if (navigator.canShare && navigator.canShare({ files: [f] })) { await navigator.share({ files: [f], title: f.name }); return true; } } catch (e) { if (e && e.name === 'AbortError') return true; }
+    return false;
+  }
+
   function printInvoice(b) {
+    const native = !!(window.Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform());
+    if (native) {
+      shareInvoiceFile(b).then((ok) => { if (!ok) toast('Printing is not available on this device', 'error'); });
+      return;
+    }
     const root = document.getElementById('print-root');
     render(h(InvoiceDoc, { b }), root);
     document.documentElement.classList.add('is-printing');
@@ -247,19 +265,20 @@
       </div>
       ${!list.length ? html`<${EmptyState} icon="invoice" title="No invoices in this period" text="Check out a guest to create a GST invoice." />`
         : wide ? html`<div class="table-wrap card"><table class="table table-click">
-            <thead><tr><th>Invoice</th><th>Date</th><th>Guest</th><th>Room</th><th class="num">Taxable</th><th class="num">GST</th><th class="num">Total</th><th class="num">Balance</th></tr></thead>
+            <thead><tr><th>Invoice</th><th>Date</th><th>Guest</th><th>Room</th><th class="num">Taxable</th><th class="num">GST</th><th class="num">Total</th><th class="num">Balance</th><th class="no-print" aria-label="Print"></th></tr></thead>
             <tbody>${list.slice(0, limit).map((b, i) => html`<tr key=${b.id} onClick=${() => App.openInvoice(b.id)} tabindex="0" onKeyDown=${(e) => e.key === 'Enter' && App.openInvoice(b.id)}>
               <td class="fw-600">${b.invoiceNo}</td><td>${U.fmtDate(b.invoiceDate || b.checkOut)}</td>
               <td><div class="fw-500">${(b.billTo && b.billTo.company) || L.guestName(b)}</div>${b.billTo && b.billTo.gstin && html`<div class="muted small">${b.billTo.gstin}</div>`}</td>
               <td><span class="room-tag">${L.roomNumbers(b)}</span></td>
               <td class="num">${U.money(bills[i].taxable, 2)}</td><td class="num">${U.money(bills[i].tax, 2)}</td>
               <td class="num fw-600">${U.money(bills[i].total)}</td><td class="num"><${App.BalanceText} b=${b} /></td>
+              <td class="no-print"><button type="button" class="btn btn-ghost btn-icon" title="Print invoice" aria-label=${'Print invoice ' + b.invoiceNo} onClick=${(e) => { e.stopPropagation(); printInvoice(b); }}><${Icon} name="printer" size=${18} /></button></td>
             </tr>`)}</tbody></table></div>`
-        : html`<div class="card-list">${list.slice(0, limit).map((b, i) => html`<button type="button" class="list-card" key=${b.id} onClick=${() => App.openInvoice(b.id)}>
+        : html`<div class="card-list">${list.slice(0, limit).map((b, i) => html`<div class="inv-card-wrap" key=${b.id}><button type="button" class="list-card" onClick=${() => App.openInvoice(b.id)}>
             <div class="lc-top"><div class="lc-icon"><${Icon} name="invoice" size=${20} /></div>
               <div class="lc-main"><div class="lc-title">${b.invoiceNo}</div><div class="lc-sub">${L.guestName(b)} · Room ${L.roomNumbers(b)}</div></div>
               <div class="lc-amount"><strong>${U.money(bills[i].total)}</strong><span class="muted small">${U.fmtDateShort(b.invoiceDate || b.checkOut)}</span></div></div>
-          </button>`)}</div>`}
+          </button><button type="button" class="btn btn-ghost btn-icon inv-card-print" title="Print invoice" aria-label=${'Print invoice ' + b.invoiceNo} onClick=${() => printInvoice(b)}><${Icon} name="printer" size=${18} /></button></div>`)}</div>`}
       ${list.length > limit && html`<div class="load-more"><${Button} onClick=${() => setLimit(limit + 100)}>Show more<//></div>`}
     <//>`;
   }
