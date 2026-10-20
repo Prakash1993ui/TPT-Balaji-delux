@@ -1249,3 +1249,7 @@ html:has(.fab) .toasts { bottom: calc(var(--bottom-h) + var(--safe-b) + 86px); }
   .modal, .kind-dialog .modal:not(.size-sm) { height: 100dvh; max-height: 100dvh; border-radius: 0; }
   .kind-drawer .modal { border-radius: 0; }
 }
+
+.inv-card-wrap{position:relative}
+.inv-card-wrap .list-card{width:100%}
+.inv-card-print{position:absolute;right:6px;bottom:6px}
