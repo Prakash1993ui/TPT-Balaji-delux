@@ -4,7 +4,7 @@
  * A new version activates as soon as it has downloaded; the app then reloads
  * itself at a safe moment (never while a form is open).
  */
-const VERSION = 'tbd-v1.0.1';
+const VERSION = 'tbd-v1.0.2';
 const ASSETS = [
   './',
   'index.html',
