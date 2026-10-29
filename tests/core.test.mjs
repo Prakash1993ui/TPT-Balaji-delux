@@ -24,7 +24,7 @@ function makeLocalStorage() {
 async function loadApp() {
   const ctx = {
     console, setTimeout, clearTimeout, Intl, Date, Math, JSON, Promise, Map, Set, Uint32Array, crypto: globalThis.crypto,
-    structuredClone, queueMicrotask, URL, Blob,
+    structuredClone, queueMicrotask, URL, Blob, TextEncoder, Uint8Array,
     localStorage: makeLocalStorage(),
     document: { addEventListener() {}, visibilityState: 'visible' },
     location: { protocol: 'http:' },
@@ -33,7 +33,7 @@ async function loadApp() {
   ctx.window = ctx;
   ctx.addEventListener = () => {};
   vm.createContext(ctx);
-  for (const f of ['js/core/utils.js', 'js/core/persist.js', 'js/core/store.js', 'js/core/logic.js', 'js/core/demo.js']) {
+  for (const f of ['js/core/utils.js', 'js/core/persist.js', 'js/core/validation.js', 'js/core/store.js', 'js/core/logic.js', 'js/core/demo.js', 'js/core/operations.js']) {
     vm.runInContext(fs.readFileSync(path.join(root, f), 'utf8'), ctx, { filename: f });
   }
   const App = ctx.App;
@@ -255,4 +255,96 @@ test('guest lookup: phone digits match as one run, names match by words', async 
   assert.equal(ids('priya vizag'), 'a');
   assert.equal(ids('78955'), 'a', 'ID number digits');
   assert.equal(ids('9000'), 'a,b');
+});
+
+
+test('operations: seasonal rates select by arrival day, specificity and retain booking prices', async () => {
+  const { Store:S, Ops } = await loadApp();
+  S.put('roomTypes', {id:'rt1',name:'Double',rate:900});
+  S.put('ratePlans',{id:'season',name:'Season',typeId:'rt1',from:'2026-10-01',to:'2026-10-31',rate:1200,days:[]});
+  S.put('ratePlans',{id:'weekend',name:'Weekend',typeId:'rt1',from:'2026-10-01',to:'2026-10-31',rate:1400,days:[0,6]});
+  S.put('ratePlans',{id:'festival',name:'Festival',typeId:'rt1',from:'2026-10-24',to:'2026-10-25',rate:1800,days:[]});
+  assert.equal(Ops.rateFor('rt1','2026-11-01'),900);
+  assert.equal(Ops.rateFor('rt1','2026-10-23'),1200);
+  assert.equal(Ops.rateFor('rt1','2026-10-18'),1400);
+  assert.equal(Ops.rateFor('rt1','2026-10-24'),1800);
+  S.put('bookings',{id:'fixed',rooms:[{roomId:'r1',rate:800}]});
+  assert.equal(S.get('bookings','fixed').rooms[0].rate,800);
+});
+
+test('operations: reconciliation nets refunds, subtracts only cash expenses, preserves closing', async () => {
+  const { Store:S, Ops } = await loadApp();
+  S.put('bookings',{id:'b1',payments:[
+    {at:'2026-01-01T10:00',mode:'Cash',amount:1000},
+    {at:'2026-01-01T11:00',mode:'Cash',amount:200,kind:'refund'},
+    {at:'2026-01-01T12:00',mode:'UPI',amount:500},
+    {at:'2026-01-02T12:00',mode:'Cash',amount:999}
+  ]});
+  S.put('expenses',{id:'cash',date:'2026-01-01',mode:'Cash',amount:150});
+  S.put('expenses',{id:'upi',date:'2026-01-01',mode:'UPI',amount:50});
+  assert.equal(Ops.reconcile('2026-01-01',100).expectedCash,750);
+  assert.equal(Ops.reconcile('2026-01-01',100).modes.UPI,500);
+  assert.throws(()=>Ops.closeDay('2026-01-01',100,700,''),/Explain/);
+  const close=Ops.closeDay('2026-01-01',100,700,'Cash shortage reviewed');
+  assert.equal(close.difference,-50);
+  assert.throws(()=>Ops.closeDay('2026-01-01',100,750,''),/already/);
+  assert.throws(()=>S.remove('dayClosings','2026-01-01'),/read-only/);
+  S.patch('expenses','cash',{amount:200});
+  assert.equal(S.get('dayClosings','2026-01-01').expectedCash,750);
+  assert.equal(Ops.reconcile('2026-01-01',100).expectedCash,700);
+});
+
+test('operations: activity omits guest values and cannot be edited; staff cannot close or change rates', async () => {
+  const { Store:S, Ops } = await loadApp();
+  S.put('guests',{id:'g1',name:'Private name',idNumber:'secret-id'});
+  S.patch('guests','g1',{phone:'9876543210'});
+  const logs=S.all('activity');
+  assert.equal(logs.length,2);
+  assert.ok(logs[1].fields.includes('phone'));
+  assert.ok(!JSON.stringify(logs).includes('secret-id'));
+  assert.throws(()=>S.put('activity',{id:'fake'}),/read-only/);
+  S.setUser({id:'s1',name:'Desk',role:'staff'});
+  assert.throws(()=>Ops.closeDay('2026-01-01',0,0,''),/Only managers/);
+  assert.throws(()=>S.put('ratePlans',{id:'fake'}),/Only managers/);
+  const snap=S.snapshot();
+  assert.ok(snap.data.activity.length);
+  await S.replaceAll(snap.data);
+  assert.equal(S.all('activity').length,2);
+});
+
+
+test('room Wi-Fi generates random credentials and includes them in backups without logging secrets', async () => {
+  const {Store:S, Ops} = await loadApp();
+  const passwords=Array.from({length:50},()=>Ops.wifiPassword());
+  assert.equal(new Set(passwords).size,50);
+  assert.ok(passwords.every(p=>/^[A-Za-z0-9]{16}$/.test(p)));
+  S.put('wifiAccess',{id:'rm1',roomId:'rm1',ssid:'Hotel Guest',username:'room101-abc',password:passwords[0]});
+  assert.ok(!JSON.stringify(S.all('activity')).includes(passwords[0]));
+  assert.equal(S.snapshot().data.wifiAccess[0].password,passwords[0]);
+});
+
+test('customer review evidence survives backup/restore and rejects unsafe image formats', async () => {
+  const {Store:S} = await loadApp();
+  const rec={id:'review1',rating:2,category:'Cleaning',status:'New',comment:'Bathroom needs cleaning',photos:[{id:'p1',data:'data:image/jpeg;base64,/9j/2Q==',caption:'Before cleaning'}],responses:[]};
+  S.put('reviews',rec);
+  S.patch('reviews','review1',{status:'Resolved',responses:[{text:'Cleaned and inspected',by:'Staff'}]});
+  const backup=S.snapshot();await S.replaceAll(backup.data);
+  assert.equal(S.get('reviews','review1').photos[0].caption,'Before cleaning');
+  assert.equal(S.get('reviews','review1').status,'Resolved');
+  assert.throws(()=>S.put('reviews',{...rec,photos:[{data:'data:image/svg+xml;base64,AAAA',caption:''}]}),/JPEG/);
+  assert.throws(()=>S.put('reviews',{...rec,rating:6}),/Rating/);
+  assert.throws(()=>S.put('reviews',{...rec,photos:Array(4).fill(rec.photos[0])}),/3 photos/);
+});
+
+test('shared Wi-Fi supports one room password for all guests and hotel-wide credentials',async()=>{
+  const {Store:S}=await loadApp();
+  const room={id:'shared-room:rm1',roomId:'rm1',mode:'shared',scope:'room',ssid:'Guest 101',password:'Room101Shared'};
+  S.put('wifiAccess',room);
+  S.put('wifiAccess',{id:'shared-hotel',roomId:'',mode:'shared',scope:'hotel',ssid:'Hotel Guest',password:'SameForEveryone'});
+  assert.equal(S.get('wifiAccess',room.id).password,'Room101Shared');
+  const snapshot=S.snapshot();await S.replaceAll(snapshot.data);
+  assert.equal(S.get('wifiAccess','shared-hotel').password,'SameForEveryone');
+  assert.throws(()=>S.put('wifiAccess',{...room,password:'short'}),/8–63/);
+  S.setUser({role:'staff',name:'Desk'});
+  assert.throws(()=>S.put('wifiAccess',room),/Only managers/);
 });

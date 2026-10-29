@@ -4,7 +4,7 @@
  * A new version activates as soon as it has downloaded; the app then reloads
  * itself at a safe moment (never while a form is open).
  */
-const VERSION = 'tbd-v1.0.2';
+const VERSION = 'tbd-v1.2.1';
 const ASSETS = [
   './',
   'index.html',
@@ -16,11 +16,17 @@ const ASSETS = [
   'js/ui/icons.js',
   'js/core/utils.js',
   'js/core/persist.js',
+  'js/core/validation.js',
   'js/core/store.js',
   'js/core/logic.js',
   'js/core/sync.js',
   'js/core/demo.js',
   'js/ui/kit.js',
+  'js/core/operations.js',
+  'js/views/operations.js',
+  'js/views/reviews.js',
+  'js/views/wifi.js',
+  'js/views/install.js',
   'js/views/booking-form.js',
   'js/views/bookings.js',
   'js/views/invoice.js',

@@ -42,7 +42,9 @@ const HOST = process.env.HOST || '0.0.0.0';
 const APP_VERSION = (() => {
   try { return require(path.join(ROOT, 'package.json')).version; } catch (e) { return '1.0.0'; }
 })();
-const COLLECTIONS = ['settings', 'roomTypes', 'rooms', 'housekeeping', 'guests', 'bookings', 'expenses'];
+const wifiRouter = require('./mikrotik.js');
+const validateRecord = require('../js/core/validation.js');
+const COLLECTIONS = ['settings', 'roomTypes', 'rooms', 'housekeeping', 'guests', 'bookings', 'expenses', 'activity', 'dayClosings', 'ratePlans', 'maintenance', 'reviews', 'wifiAccess'];
 const SESSION_DAYS = 30;
 const MAX_BODY = 30 * 1024 * 1024;
 const MAX_RECORD = 1024 * 1024;
@@ -269,26 +271,34 @@ function syncPayload(since, clientDb) {
   return { dbId: db.dbId, version: db.version, changes: changesSince(since) };
 }
 function allowed(user, op) {
+  if (op.col === 'wifiAccess' && op.rec && op.rec.mode === 'shared') return ['admin','manager'].includes(user.role);
+  if (op.col === 'activity') return false;
+  if (op.col === 'dayClosings') return ['admin', 'manager'].includes(user.role) && op.op === 'put' && !db.records.dayClosings[op.id];
+  if (op.col === 'ratePlans') return ['admin', 'manager'].includes(user.role);
   if (user.role === 'admin') return true;
   if (op.col === 'settings') return false;
   if (op.op === 'del') return user.role === 'manager' && op.col !== 'roomTypes' && op.col !== 'rooms';
   if (op.col === 'roomTypes' || op.col === 'rooms') return user.role === 'manager';
   return true;
 }
-function applyOps(ops, user) {
+function applyOps(ops, user, trustedRouter = false) {
   const rejected = [];
   let changed = false;
   for (const op of Array.isArray(ops) ? ops : []) {
     const ok = op && COLLECTIONS.includes(op.col) && typeof op.id === 'string' && op.id.length > 0 && op.id.length <= 120;
     if (!ok || !allowed(user, op)) { rejected.push(op && op.id); continue; }
     const table = db.records[op.col];
+    const before = table[op.id];
+    let accepted = false;
     if (op.op === 'del') {
       const cur = table[op.id];
       if (cur && !cur._deleted) {
         table[op.id] = { id: op.id, _deleted: true, _v: ++db.version, updatedAt: Date.now(), updatedBy: user.name };
         changed = true;
+        accepted = true;
       }
     } else if (op.op === 'put' && op.rec && typeof op.rec === 'object' && !Array.isArray(op.rec) && op.rec.id === op.id) {
+      try { validateRecord(op.col, op.rec); } catch(e) { rejected.push(op.id); continue; }
       if (JSON.stringify(op.rec).length > MAX_RECORD) { rejected.push(op.id); continue; }
       const prev = table[op.id];
       const rec = Object.assign({}, op.rec, {
@@ -296,10 +306,22 @@ function applyOps(ops, user) {
         updatedBy: user.name,
         createdBy: (prev && !prev._deleted && prev.createdBy) || op.rec.createdBy || user.name,
       });
+      if (op.col === 'wifiAccess' && op.rec.mode !== 'shared' && !trustedRouter) { rec.state = 'Generated — router setup required'; delete rec.activatedAt; }
       delete rec._deleted;
       table[op.id] = rec;
       changed = true;
+      accepted = true;
     } else rejected.push(op.id);
+    if (accepted && !(op.col === 'settings' && op.id === 'counters')) {
+      const after = table[op.id]._deleted ? null : table[op.id];
+      const fields = [...new Set([...Object.keys(before || {}), ...Object.keys(after || {})])]
+        .filter(k => !k.startsWith('_') && !['createdAt','updatedAt','createdBy','updatedBy'].includes(k)
+          && JSON.stringify((before || {})[k]) !== JSON.stringify((after || {})[k]));
+      const id = rid(16);
+      db.records.activity[id] = { id, at: new Date().toISOString(), actor: user.name, userId: user.id,
+        collection: op.col, recordId: op.id, action: !after ? 'Deleted' : !before || before._deleted ? 'Created' : 'Updated',
+        fields, _v: ++db.version };
+    }
   }
   if (changed) {
     markDb();
@@ -443,6 +465,21 @@ async function handleApi(req, res, url) {
   if (!sess) return sendJson(res, 401, { error: 'Please sign in', code: req.authVia === 'none' ? 'no-token' : 'bad-token' });
   const user = sess.user;
   const admin = user.role === 'admin';
+
+  if (route === 'wifi/status' && method === 'GET') return sendJson(res, 200, { configured: wifiRouter.configured(), provider: 'MikroTik RouterOS 7 HotSpot' });
+  if (route === 'wifi/activate' && method === 'POST') {
+    if (!['admin', 'manager'].includes(user.role)) return error(res, 403, 'A manager must activate router credentials');
+    const body = await readBody(req, 4096);
+    const rec = db.records.wifiAccess[String(body.roomId || '')];
+    if (!rec || rec._deleted || rec.mode === 'shared') return error(res, 400, 'Sync the room credentials before activation');
+    if (!wifiRouter.configured()) return error(res, 503, 'Configure MikroTik on the hotel server first');
+    try {
+      const result = await wifiRouter.activate(rec);
+      if (db.records.wifiAccess[rec.id] !== rec) return error(res,409,'Room credentials changed during activation. Refresh and activate the current credentials');
+      applyOps([{op:'put',col:'wifiAccess',id:rec.id,rec:Object.assign({},rec,result)}],user,true);
+      return sendJson(res,200,{ok:true,record:db.records.wifiAccess[rec.id]});
+    } catch (e) { return error(res,502,e.message); }
+  }
 
   if (route === 'logout' && method === 'POST') {
     delete auth.sessions[sess.key];

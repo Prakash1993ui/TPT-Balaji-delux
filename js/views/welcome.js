@@ -48,6 +48,7 @@
           <${Icon} name="chevronRight" size=${20} />
         </button>
       </div>
+      <${Button} icon="download" onClick=${()=>App.openInstall()}>Install on Android / iPhone · Share app<//>
       <ul class="welcome-points">
         <li><${Icon} name="key" size=${18} /> Walk-in check-in in under a minute</li>
         <li><${Icon} name="invoice" size=${18} /> GST invoices (5% / 18% slabs) with print & WhatsApp</li>

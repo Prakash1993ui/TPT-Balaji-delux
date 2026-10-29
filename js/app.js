@@ -6,7 +6,7 @@
   'use strict';
   const { html, h, render, useState, useEffect, useRef, U, L, Icon, Button, Badge, Avatar, Modal, toast } = App;
   const S = App.Store;
-  App.VERSION = '1.0.1';
+  App.VERSION = '1.2.0';
 
   const NAV = [
     { id: 'dashboard', label: 'Dashboard', short: 'Home', icon: 'dashboard' },
@@ -18,6 +18,10 @@
     { id: 'housekeeping', label: 'Housekeeping', short: 'Cleaning', icon: 'housekeeping' },
     { id: 'expenses', label: 'Expenses', icon: 'expenses' },
     { id: 'reports', label: 'Reports', icon: 'reports', perm: 'reports' },
+    { id: 'wifi', label: 'Room Wi-Fi', icon: 'wifi' },
+    { id: 'reviews', label: 'Customer reviews', icon: 'guests' },
+    { id: 'operations', label: 'Operations', icon: 'reports' },
+    { id: 'install', label: 'Install & share', icon: 'download' },
     { id: 'settings', label: 'Settings', icon: 'settings' },
   ];
   const MOBILE_TABS = ['dashboard', 'rooms', 'bookings', 'calendar'];
@@ -96,13 +100,9 @@
 
   // ------------------------------------------------------------------ logo
   App.LogoMark = ({ size = 40 }) => html`<svg class="logo-mark" width=${size} height=${size} viewBox="0 0 64 64" aria-hidden="true">
-    <rect width="64" height="64" rx="15" fill="#8A1538" />
-    <path d="M32 8l3.2 5.6h-6.4z" fill="#F2C14E" />
-    <path d="M26.5 15.5h11l1.6 5.5H24.9z" fill="#F2C14E" />
-    <path d="M23.5 23h17l1.8 6.2H21.7z" fill="#F2C14E" />
-    <path d="M20.5 31.2h23l2 6.8h-27z" fill="#F2C14E" />
-    <path d="M16.5 40h31v14h-31z" fill="#F2C14E" />
-    <path d="M28 54v-6.5a4 4 0 0 1 8 0V54z" fill="#8A1538" />
+<rect width="64" height="64" rx="15" fill="#8A1538"/>
+<g fill="#F2C14E"><rect x="18" y="18" width="28" height="36" rx="2"/><rect x="11" y="31" width="9" height="23" rx="2"/><rect x="44" y="31" width="9" height="23" rx="2"/><rect x="25" y="9" width="14" height="12" rx="2"/></g>
+<g fill="#8A1538"><path d="M28 11h2v3h4v-3h2v8h-2v-3h-4v3h-2z"/><rect x="24" y="24" width="5" height="5" rx="1"/><rect x="35" y="24" width="5" height="5" rx="1"/><rect x="24" y="34" width="5" height="5" rx="1"/><rect x="35" y="34" width="5" height="5" rx="1"/><rect x="14" y="36" width="3" height="4" rx=".5"/><rect x="47" y="36" width="3" height="4" rx=".5"/><rect x="14" y="44" width="3" height="4" rx=".5"/><rect x="47" y="44" width="3" height="4" rx=".5"/><path d="M28 54V44h8v10z"/></g><path d="M10 55h44" stroke="#F2C14E" stroke-width="2" stroke-linecap="round"/>
   </svg>`;
   function Brand({ compact }) {
     const s = S.settings();
@@ -382,7 +382,7 @@
       }} />`;
     } else if (S.mode === 'server' && S.isEmpty() && !App.Sync.lastSync) {
       body = html`<${Splash} text=${st === 'offline' ? 'Cannot reach the hotel server. Retrying…' : 'Loading hotel data…'} />`;
-    } else if (S.isEmpty()) {
+    } else if (S.isEmpty() && parseRoute().page !== 'install') {
       body = html`<${App.Welcome} />`;
     } else {
       body = html`<${Shell} />`;
