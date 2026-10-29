@@ -165,6 +165,36 @@ test('roles: staff can run the front desk but not change settings or delete', as
   assert.equal((await api('counter', { method: 'POST', token: staff, body: { name: 'booking', set: 1 } })).status, 403);
 });
 
+test('operational permissions, server audit attribution, review backups and router setup guard', async () => {
+  const staff=(await api('login',{method:'POST',body:{username:'ramu',password:'desk123'}})).json.token;
+  const snapshot=(await api('sync?since=0',{token:adminToken})).json;
+  async function push(ops,token=adminToken) {return api('sync',{method:'POST',token,body:{ops,since:0,db:snapshot.dbId}});}
+  const closing={id:'2026-01-01',date:'2026-01-01',opening:0,counted:0,expectedCash:0};
+  const denied=await push([
+    {op:'put',col:'activity',id:'fake',rec:{id:'fake'}},
+    {op:'put',col:'dayClosings',id:closing.id,rec:closing},
+    {op:'put',col:'ratePlans',id:'plan',rec:{id:'plan'}}
+  ],staff);
+  assert.deepEqual(denied.json.rejected.sort(),['2026-01-01','fake','plan']);
+  assert.deepEqual((await push([{op:'put',col:'dayClosings',id:closing.id,rec:closing}])).json.rejected,[]);
+  assert.deepEqual((await push([{op:'del',col:'dayClosings',id:closing.id}])).json.rejected,[closing.id]);
+  assert.deepEqual((await push([{op:'put',col:'activity',id:'fake',rec:{id:'fake'}}])).json.rejected,['fake']);
+  const review={id:'rev1',rating:1,category:'Damage',comment:'Damaged chair',status:'New',photos:[{data:'data:image/jpeg;base64,/9j/2Q==',caption:'Before repair'}],responses:[]};
+  assert.deepEqual((await push([{op:'put',col:'reviews',id:'rev1',rec:review}],staff)).json.rejected,[]);
+  const wifi={id:'rm-wifi',roomId:'rm-wifi',ssid:'Guest',username:'room101-demo',password:'Abcdefgh23456789',state:'Active on MikroTik hotspot'};
+  wifi.password='Abcdefgh23456789';
+  assert.deepEqual((await push([{op:'put',col:'wifiAccess',id:wifi.id,rec:wifi}])).json.rejected,[]);
+  const backup=(await api('backup',{token:adminToken})).json;
+  assert.equal(backup.data.reviews[0].photos[0].caption,'Before repair');
+  const log=backup.data.activity.find(x=>x.collection==='reviews'&&x.recordId==='rev1');
+  assert.equal(log.actor,'Ramu');
+  assert.ok(!JSON.stringify(log).includes('Damaged chair'));
+  assert.equal(backup.data.wifiAccess[0].state,'Generated — router setup required');
+  assert.equal((await api('wifi/status',{token:adminToken})).json.configured,false);
+  assert.equal((await api('wifi/activate',{method:'POST',token:staff,body:{roomId:wifi.id}})).status,403);
+  assert.equal((await api('wifi/activate',{method:'POST',token:adminToken,body:{roomId:wifi.id}})).status,503);
+});
+
 test('users: the last admin cannot be removed or demoted', async () => {
   const me = (await api('me', { token: adminToken })).json.user;
   assert.equal((await api('users/' + me.id, { method: 'DELETE', token: adminToken })).status, 400);

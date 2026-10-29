@@ -19,7 +19,7 @@
   'use strict';
   const { U } = App;
 
-  const COLLECTIONS = ['settings', 'roomTypes', 'rooms', 'housekeeping', 'guests', 'bookings', 'expenses'];
+  const COLLECTIONS = ['settings', 'roomTypes', 'rooms', 'housekeeping', 'guests', 'bookings', 'expenses', 'activity', 'dayClosings', 'ratePlans', 'maintenance', 'reviews', 'wifiAccess'];
   const ID_PREFIX = { roomTypes: 'rt', rooms: 'rm', guests: 'g', bookings: 'b', expenses: 'ex' };
 
   const DEFAULT_SETTINGS = {
@@ -124,8 +124,24 @@
   }
 
   // ---------------------------------------------------------------- writes
+  function audit(col, id, before, after) {
+    if (remote || col === 'activity' || (col === 'settings' && id === 'counters')) return;
+    const fields = [...new Set([...Object.keys(before || {}), ...Object.keys(after || {})])]
+      .filter(k => !k.startsWith('_') && !['createdAt','updatedAt','createdBy','updatedBy'].includes(k)
+        && JSON.stringify((before || {})[k]) !== JSON.stringify((after || {})[k]));
+    const event = { id: U.uid('audit'), at: new Date().toISOString(), actor: user.name,
+      collection: col, recordId: id, action: !after ? 'Deleted' : !before ? 'Created' : 'Updated', fields };
+    data.activity.set(event.id, event);
+    persist && persist.put('activity', event);
+    touch('activity');
+  }
   function put(col, rec) {
+    if (col === 'activity') throw new Error('Activity history is read-only');
+    if (col === 'dayClosings' && (!can('reports') || get(col, rec.id))) throw new Error('Day closing requires a manager and cannot be overwritten');
+    if (col === 'ratePlans' && !can('rates')) throw new Error('Only managers can change rate plans');
     if (!data[col]) throw new Error('Unknown collection ' + col);
+    if (col === 'wifiAccess' && rec.mode === 'shared' && !can('reports')) throw new Error('Only managers can change shared Wi-Fi details');
+    App.validateRecord(col, rec);
     const prev = data[col].get(rec.id);
     const t = Date.now();
     const next = Object.assign({}, rec, {
@@ -140,6 +156,7 @@
     persist && persist.put(col, next);
     remote && remote.queue({ op: 'put', col, id: next.id, rec: next });
     touch(col);
+    audit(col, next.id, prev, next);
     return next;
   }
   function patch(col, id, changes) {
@@ -148,10 +165,14 @@
     return put(col, Object.assign({}, cur, changes));
   }
   function remove(col, id) {
+    if (['activity', 'dayClosings'].includes(col)) throw new Error('History is read-only');
+    if (col === 'ratePlans' && !can('rates')) throw new Error('Only managers can change rate plans');
+    const before = get(col, id);
     if (!data[col].has(id)) return;
     data[col].delete(id);
     persist && persist.del(col, id);
     remote && remote.queue({ op: 'del', col, id });
+    audit(col, id, before, null);
     touch(col);
   }
   /** Group several writes into one UI update. */

@@ -293,6 +293,8 @@
   }
 
   App.Sync = {
+    wifiStatus: () => api('wifi/status'),
+    activateWifi: roomId => api('wifi/activate', {method:'POST', body:{roomId}, timeout:30000}),
     detect, health, login, me, logout, queue, hasPending, kick, stop, start: () => kick(), resetCursor,
     nextSeq, setSeq, peekSeq, pushSnapshot,
     users: () => api('users').then((r) => r.users),

@@ -3,7 +3,7 @@
  */
 (function (App) {
   'use strict';
-  const { html, useState, useMemo, U, L, Icon, Button, Badge, Field, Input, MoneyInput, Select, Textarea, Segmented, Stepper, Modal, Avatar, toast } = App;
+  const { html, useState, useMemo, useEffect, U, L, Icon, Button, Badge, Field, Input, MoneyInput, Select, Textarea, Segmented, Stepper, Modal, Avatar, toast } = App;
   const S = App.Store;
 
   const emptyGuest = () => ({ id: null, name: '', phone: '', email: '', idType: 'Aadhaar', idNumber: '', address: '', city: '', state: '', gstin: '', company: '' });
@@ -31,7 +31,7 @@
       if (preset.roomId) {
         const rm = L.room(preset.roomId);
         const rt = rm && L.roomType(rm.typeId);
-        return rm ? [{ roomId: rm.id, rate: String(rt ? rt.rate : 0), extraBeds: 0 }] : [];
+        return rm ? [{ roomId: rm.id, rate: String(rt ? App.Ops.rateFor(rt.id, walkIn ? U.today() : date) : 0), extraBeds: 0 }] : [];
       }
       return [];
     });
@@ -59,6 +59,12 @@
       return U.diffDays(startDate, e) < 1 ? U.addDays(startDate, 1) : e;
     })();
     const avail = L.availability(startDate, endDate, editing ? booking.id : null);
+
+    useEffect(() => {
+      if (!editing) setSelected(rows => rows.map(r => r.manualRate ? r : Object.assign({}, r, {
+        rate: String(App.Ops.rateFor((L.room(r.roomId) || {}).typeId, startDate))
+      })));
+    }, [startDate]);
 
     const draft = {
       id: 'draft', status: 'reserved', checkIn, checkOut, nights,
@@ -95,10 +101,10 @@
       if (on) setSelected(selected.filter((x) => x.roomId !== rm.id));
       else {
         const rt = L.roomType(rm.typeId);
-        setSelected([...selected, { roomId: rm.id, rate: String(rt ? rt.rate : 0), extraBeds: 0 }]);
+        setSelected([...selected, { roomId: rm.id, rate: String(rt ? App.Ops.rateFor(rt.id, walkIn ? U.today() : date) : 0), extraBeds: 0 }]);
       }
     }
-    const setRoom = (roomId, k, v) => setSelected(selected.map((x) => (x.roomId === roomId ? Object.assign({}, x, { [k]: v }) : x)));
+    const setRoom = (roomId, k, v) => setSelected(selected.map((x) => (x.roomId === roomId ? Object.assign({}, x, { [k]: v }, k === 'rate' ? { manualRate: true } : {}) : x)));
 
     function validate() {
       const e = {};
@@ -255,7 +261,7 @@
           const rt = L.roomType(rm.typeId) || {};
           return html`<div class="sel-room">
             <div class="sel-room-name"><strong>Room ${rm.number}</strong><span class="muted">${rt.name || ''}</span></div>
-            <${Field} label="Tariff / night" class="sel-rate"><${MoneyInput} value=${r.rate} onChange=${(v) => setRoom(r.roomId, 'rate', v)} /><//>
+            <${Field} label="Tariff / night (arrival rate)" class="sel-rate"><${MoneyInput} value=${r.rate} onChange=${(v) => setRoom(r.roomId, 'rate', v)} /><//>
             <${Field} as="div" label=${`Extra bed ${rt.extraBedRate ? '(' + U.money(rt.extraBedRate) + ')' : ''}`} class="sel-beds"><${Stepper} value=${r.extraBeds} min=${0} max=${4} onChange=${(v) => setRoom(r.roomId, 'extraBeds', v)} label="Extra beds" /><//>
             <${Button} variant="ghost" icon="trash" class="sel-remove" aria-label=${'Remove room ' + rm.number} onClick=${() => toggleRoom(rm)} />
           </div>`;
